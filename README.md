@@ -51,4 +51,4 @@ Contributions to the Code Combiner extension are welcome! Please feel free to fo
 
 ## License
 
-This extension is released under the MIT License. See the [LICENSE](LICENSE) file for more details.
+This extension is released under the MIT License.

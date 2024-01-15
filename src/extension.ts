@@ -1,8 +1,38 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as glob from 'glob';
+
 
 let selectedDirectory: string | undefined;
+
+const languageConfig = {
+    "go": {
+        include: ["**/*.go", "**/go.mod"],
+        exclude: ['vendor/**']
+    },
+    "javascript": {
+        include: ["**/*.js", "**/*.jsx", "**/*.ts", "**/*.tsx", "**/*.json"],
+        exclude: ["node_modules/**", "package-lock.json"]
+    },
+    "python": {
+        include: ["**/*.py"],
+        exclude: ["__pycache__/**"]
+    },
+    "java": {
+        include: ["**/*.java"],
+        exclude: ["**/target/**"]
+    },
+    "ruby": {
+        include: ["**/*.rb"],
+        exclude: []
+    },
+    "php": {
+        include: ["**/*.php"],
+        exclude: []
+    },
+};
+
 
 export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.commands.registerCommand('code-combiner.compileFiles', async () => {
@@ -46,24 +76,44 @@ async function showQuickPickForExtensions(): Promise<string[]> {
     return selected?.map(item => item.label) ?? [];
 }
 
-function compileFiles(directory: string, extensions: string[], outputFileName: string) {
+function compileFiles(directory: string, languages: string[], outputFileName: string) {
     let compiledContent = '';
-    extensions.forEach(ext => {
-        fs.readdirSync(directory, { withFileTypes: true }).forEach(dirent => {
-            if (dirent.isFile() && dirent.name.endsWith(`.${ext}`)) {
-                const filePath = path.join(directory, dirent.name);
-                console.log(`Reading file: ${filePath}`);
-                const content = fs.readFileSync(filePath, 'utf8');
-                compiledContent += `File: ${filePath}\n${content}\n\n`;
-            } else if (dirent.isDirectory()) {
-                compileFiles(path.join(directory, dirent.name), [ext], outputFileName);
+
+    languages.forEach(lang => {
+        const config = languageConfig[lang as keyof typeof languageConfig];
+        if (!config) {
+            console.log(`No configuration found for language: ${lang}`);
+            return;
+        }
+        const excludePatterns = config.exclude.map(e => path.normalize(path.join(directory, e)).replace(/\\/g, '/'));
+        config.include.forEach(pattern => {
+            const fullPattern = path.normalize(path.join(directory, pattern)).replace(/\\/g, '/');
+            console.log(`Searching for files matching pattern ${fullPattern}`);
+            console.log(`Excluding files matching patterns ${excludePatterns}`);
+
+            try {
+                glob.sync(fullPattern, { ignore: excludePatterns, nodir: true }).forEach(filePath => {
+                    console.log(`Found file ${filePath}`);
+                    try {
+                        const content = fs.readFileSync(filePath, 'utf8');
+                        compiledContent += `File: ${filePath}\n\`\`\`\n${content}\n\`\`\`\n`;
+                        console.log(`Read file ${filePath}`);
+                    } catch (readError) {
+                        console.error(`Failed to read file ${filePath}: ${readError}`);
+                    }
+                });
+            } catch (globError) {
+                console.error(`Failed to find files matching pattern ${fullPattern}: ${globError}`);
             }
         });
     });
 
     if (compiledContent) {
-        console.log(`Writing to ${outputFileName}`);
-        fs.appendFileSync(outputFileName, compiledContent);
+        try {
+            fs.writeFileSync(outputFileName, compiledContent);
+        } catch (writeError) {
+            console.error(`Failed to write to file ${outputFileName}: ${writeError}`);
+        }
     } else {
         console.log('No content to write');
     }
